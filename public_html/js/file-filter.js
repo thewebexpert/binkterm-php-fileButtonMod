@@ -9,6 +9,46 @@
 (function () {
     'use strict';
 
+    const STORAGE_KEY = 'binkterm_file_filter_network';
+
+    function getSavedFileNetwork() {
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const netParam = urlParams.get('net');
+            if (netParam) {
+                return netParam.toLowerCase();
+            }
+            if (window.UserStorage && typeof window.UserStorage.getItem === 'function') {
+                const userVal = window.UserStorage.getItem('file_filter_network');
+                if (userVal) {
+                    return userVal.toLowerCase();
+                }
+            }
+            const localVal = localStorage.getItem(STORAGE_KEY);
+            if (localVal) {
+                return localVal.toLowerCase();
+            }
+        } catch (e) {}
+        return 'all';
+    }
+
+    function setSavedFileNetwork(net) {
+        try {
+            if (window.UserStorage && typeof window.UserStorage.setItem === 'function') {
+                window.UserStorage.setItem('file_filter_network', net);
+            }
+            localStorage.setItem(STORAGE_KEY, net);
+
+            const url = new URL(window.location);
+            if (!net || net === 'all') {
+                url.searchParams.delete('net');
+            } else {
+                url.searchParams.set('net', net);
+            }
+            window.history.replaceState({}, '', url);
+        } catch (e) {}
+    }
+
     function initFileButtonMod() {
         // Only run on the files pages (/files, /files/...)
         const filesContainer = document.getElementById('filesContainer');
@@ -68,7 +108,7 @@
             mainCard.parentNode.insertBefore(directoryContainer, mainCard);
         }
 
-        let activeNetwork = 'all';
+        let activeNetwork = getSavedFileNetwork();
         let currentMode = 'directory'; // 'directory' or 'area' or 'recent'
 
         // Wait for allFileAreas to be populated by Binkterm's files.twig
@@ -81,7 +121,7 @@
                 // Determine initial view:
                 // If the user accessed /files with a specific tag (e.g. /files/TAG or ?area=),
                 // respect Binkterm's selection and show the area files.
-                // Otherwise, show the Area Directory by default!
+                // Otherwise, show the Area Directory with active saved network!
                 const pathMatches = window.location.pathname.match(/^\/files\/([^\/?#]+)$/);
                 const urlParams = new URLSearchParams(window.location.search);
                 const hasAreaInUrl = (pathMatches && pathMatches[1]) || urlParams.get('area') || urlParams.get('view') === 'my-uploads';
@@ -89,7 +129,7 @@
                 if (hasAreaInUrl) {
                     showAreaFilesMode();
                 } else {
-                    showDirectoryMode('all');
+                    showDirectoryMode(activeNetwork, false);
                 }
             } else if (pollCount < 40) { // 4 seconds max
                 pollCount++;
@@ -344,9 +384,13 @@
         // =========================================================================
         // View Modes & Navigation
         // =========================================================================
-        function showDirectoryMode(net) {
+        function showDirectoryMode(net, savePref = true) {
             currentMode = 'directory';
             activeNetwork = net || 'all';
+
+            if (savePref) {
+                setSavedFileNetwork(activeNetwork);
+            }
 
             // Show directory container, hide file files table
             if (mainCard) mainCard.classList.add('d-none');
@@ -454,9 +498,17 @@
         const backBtn = document.getElementById('file-btn-back');
         if (backBtn) {
             backBtn.addEventListener('click', function () {
-                showDirectoryMode('all');
+                showDirectoryMode(activeNetwork, false);
             });
         }
+
+        // Listen for browser Back/Forward navigation
+        window.addEventListener('popstate', function () {
+            const currentSaved = getSavedFileNetwork();
+            if (currentSaved !== activeNetwork && currentMode === 'directory') {
+                showDirectoryMode(currentSaved, false);
+            }
+        });
 
         // Wrap or intercept selectFileArea from sidebar list-group
         const sidebarList = document.getElementById('fileAreasList');
